@@ -1,12 +1,25 @@
-# DeployCloud 构建上下文忽略清单
-# 只把必要的文件送进构建上下文,加快构建、避免把本地环境带上去
+# DeployCloud build context exclusions
+# One pattern per line. Comments must start at the beginning of a line
+# (inline comments are not supported and cause "syntax error in pattern").
+
+# Dependencies are installed by npm ci inside the image; never send them
 node_modules/
+
+# VCS and editor metadata
 .git/
 .gitignore
+.vscode/
+.idea/
+
+# Logs and npm cache
 npm-debug.log*
 *.log
+.npm/
+
+# Vercel-local config (this project deploys to DeployCloud only)
 .vercel/
+vercel.json
+
+# OS junk files
 .DS_Store
-README.md
-vercel.json        # Vercel 专属配置,DeployCloud 用不到(留着也无害,这里从构建上下文排除)
-.hermes/
+Thumbs.db
