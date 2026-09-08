@@ -5,7 +5,8 @@
 #   docker.io/<dockerhub-user>/node-music:latest  (若配了 secrets.DOCKERHUB_USERNAME/PASSWORD)
 name: build-image
 
-on:
+# 加引号避免 YAML 1.1 把 "on" 当布尔 true
+"on":
   push:
     branches: [main]
     paths:
