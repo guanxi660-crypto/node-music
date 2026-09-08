@@ -1,0 +1,17 @@
+# 依赖目录 —— 由 npm ci 在容器构建时安装,绝不提交
+node_modules/
+
+# npm 缓存 / 日志
+.npm/
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# Vercel 本地配置(此项目只部署到 DeployCloud)
+.vercel/
+
+# 编辑器
+.vscode/
+.idea/
