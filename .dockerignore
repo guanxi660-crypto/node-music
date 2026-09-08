@@ -1,0 +1,12 @@
+# DeployCloud 构建上下文忽略清单
+# 只把必要的文件送进构建上下文,加快构建、避免把本地环境带上去
+node_modules/
+.git/
+.gitignore
+npm-debug.log*
+*.log
+.vercel/
+.DS_Store
+README.md
+vercel.json        # Vercel 专属配置,DeployCloud 用不到(留着也无害,这里从构建上下文排除)
+.hermes/
