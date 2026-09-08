@@ -1,0 +1,15 @@
+# 最简测试 workflow, 用于二分排查: 确认 runner 与 'on' 关键字解析正常
+name: probe
+
+# 引号包裹, 避免 YAML 1.1 把 "on" 解析为布尔 true
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello
+        run: echo "runner ok, repo=${{ github.repository }}"
