@@ -16,8 +16,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=optional
 
-# 复制应用源码(含 index.js、index.html 伪装页、Procfile)
-COPY index.js index.html Procfile ./
+# 复制应用源码(含 index.js、index.html 伪装页)
+COPY index.js index.html ./
 
 # $PORT 由 DeployCloud 平台注入(默认 3000),httpServer.listen(PORT) 会监听它
 ENV NODE_ENV=production
