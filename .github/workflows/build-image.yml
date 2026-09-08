@@ -1,0 +1,83 @@
+# 构建并推送镜像, 供 mags deploy --image 使用
+# 触发: push 到 main / 手动 workflow_dispatch
+# 产出:
+#   ghcr.io/<owner>/node-music:main  (默认, 无额外凭证)
+#   docker.io/<dockerhub-user>/node-music:latest  (若配了 secrets.DOCKERHUB_USERNAME/PASSWORD)
+name: build-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "index.js"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/build-image.yml"
+  workflow_dispatch:
+
+# 需要写 ghcr.io 包
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: node-music
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    # 避免在 fork PR 上执行(防泄漏 secrets)
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub (optional)
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker meta (tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # 缓存避免每次重装 node 依赖
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}
+          cache-to: type=gha,mode=max,scope=${{ env.IMAGE_NAME }}
+
+      - name: Print image tags
+        run: echo ${{ steps.meta.outputs.tags }}
