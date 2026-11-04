@@ -889,7 +889,13 @@ async function startNezhaAgent() {
         let workerCancelled = false;
 
         try {
-            client = new proto.NezhaService(NEZHA_SERVER, credentials);
+            client = new proto.NezhaService(NEZHA_SERVER, credentials, {
+                // HTTP/2 keepalive: 每 20s 发 PING, 3 次无响应判死; 空闲也发, 防中间链路按空闲超时掐流
+                'grpc.keepalive_time_ms': 20000,
+                'grpc.keepalive_timeout_ms': 10000,
+                'grpc.keepalive_permit_without_calls': 1,
+                'grpc.http2.max_pings_without_data': 0,
+            });
             console.log('nzbot is running...');
 
             const hostInfo = await getHost();
@@ -920,11 +926,11 @@ async function startNezhaAgent() {
             log('[Agent] ReportSystemState strem connect');
 
             taskStream.on('data', (task) => { dispatchTask(task, taskStream, client, metadata); });
-            taskStream.on('error', (err) => { logErr('[Agent] RequestTask strem error:', err.message); workerCancelled = true; });
+            taskStream.on('error', (err) => { console.error('[Agent] RequestTask strem error:', err.message); workerCancelled = true; });
             taskStream.on('end', () => { log('[Agent] RequestTask strem finished'); workerCancelled = true; });
 
             // 修复: stateStream 也挂常驻 error/end 监听, 否则流断开时会抛 Unhandled 'error' 导致整个进程崩溃
-            stateStream.on('error', (err) => { logErr('[Agent] ReportSystemState strem error:', err.message); workerCancelled = true; });
+            stateStream.on('error', (err) => { console.error('[Agent] ReportSystemState strem error:', err.message); workerCancelled = true; });
             stateStream.on('end', () => { log('[Agent] ReportSystemState strem finished'); workerCancelled = true; });
 
             const stateLoop = (async () => {
