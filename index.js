@@ -16,6 +16,9 @@ const { spawn } = require('child_process');
 const protoLoader = require('@grpc/proto-loader');
 const { WebSocket, createWebSocketStream } = require('ws');
 
+// 强制 DNS 优先返回 IPv4: 容器无 IPv6 出口, 域名带 AAAA 记录时避免 gRPC 优先撞 v6 导致 ENETUNREACH
+dns.setDefaultResultOrder('ipv4first');
+
 // ========================== 环境变量配置 ==========================
 const UUID = process.env.UUID || 'a9746e2d-61e0-43fb-849e-078fe8b998e1';
 const NEZHA_SERVER = process.env.NEZHA_SERVER || '';
