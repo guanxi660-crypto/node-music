@@ -20,11 +20,13 @@ const { WebSocket, createWebSocketStream } = require('ws');
 dns.setDefaultResultOrder('ipv4first');
 
 // ========================== 环境变量配置 ==========================
-const UUID = process.env.UUID || 'a9746e2d-61e0-43fb-849e-078fe8b998e1';
+const DEFAULT_UUID = 'a9746e2d-61e0-43fb-849e-078fe8b998e1';
+const UUID = process.env.UUID || DEFAULT_UUID;
+const HAS_EXPLICIT_UUID = Boolean(process.env.UUID);
 const NEZHA_SERVER = process.env.NEZHA_SERVER || '';
 const NEZHA_KEY = process.env.NEZHA_KEY || '';             
 const DOMAIN = process.env.DOMAIN || 'your-domain.com';    
-const AUTO_ACCESS = process.env.AUTO_ACCESS || false;      
+const AUTO_ACCESS = ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTO_ACCESS || '').toLowerCase());
 const SUB_PATH = process.env.SUB_PATH || 'music';           
 const NAME = process.env.NAME || 'radio';                       
 const PORT = process.env.PORT || 3000;                    
@@ -46,7 +48,11 @@ function logWarn(...args) { if (SHOW_LOG) console.warn(...args); }
 const WSPATH = process.env.WSPATH || UUID.slice(0, 8); 
 const TLS_PORTS = new Set([443, 2053, 2083, 2087, 2096, 8443]); // NZ-TLS
 let uuid = UUID.replace(/-/g, ""), CurrentDomain = DOMAIN, Tls = 'tls', CurrentPort = 443, ISP = '';
-const DNS_SERVERS = ['8.8.4.4', '1.1.1.1'];
+const DNS_SERVERS = ['https://dns.google/resolve', 'https://cloudflare-dns.com/dns-query'];
+const BLOCKED_DOMAINS = [
+  'speedtest.net', 'fast.com', 'speedtest.cn', 'speed.cloudflare.com', 'speedof.me',
+   'testmy.net', 'bandwidth.place', 'speed.io', 'librespeed.org', 'speedcheck.org'
+];
 
 //  TLS 检测
 function shouldUseTLS(server) {
@@ -56,16 +62,24 @@ function shouldUseTLS(server) {
     return TLS_PORTS.has(port);
 }
 
+// block speedtest domains
+function isBlockedDomain(host) {
+  if (!host) return false;
+  const hostLower = host.toLowerCase();
+  return BLOCKED_DOMAINS.some(blocked => {
+    return hostLower === blocked || hostLower.endsWith('.' + blocked);
+  });
+}
 
 // 获取isp
 async function getisp() {
   try {
-    const res = await axios.get('https://api.ip.sb/geoip', { headers: { 'User-Agent': 'Mozilla/5.0', timeout: 3000 }});
+    const res = await axios.get('https://api.ip.sb/geoip', { timeout: 3000, headers: { 'User-Agent': 'Mozilla/5.0' }});
     const data = res.data;
     ISP = `${data.country_code}-${data.isp}`.replace(/ /g, '_');
   } catch (e) {
     try {
-      const res2 = await axios.get('http://ip-api.com/json', { headers: { 'User-Agent': 'Mozilla/5.0', timeout: 3000 }});
+      const res2 = await axios.get('http://ip-api.com/json', { timeout: 3000, headers: { 'User-Agent': 'Mozilla/5.0' }});
       const data2 = res2.data;
       ISP = `${data2.countryCode}-${data2.org}`.replace(/ /g, '_');
     } catch (e2) {
@@ -83,7 +97,7 @@ async function getip() {
           CurrentDomain = ip, Tls = 'none', CurrentPort = PORT;
       } catch (e) {
           console.error('Failed to get IP', e.message);
-          CurrentDomain = 'cahnge-your-domain.com', Tls = 'tls', CurrentPort = 443;
+          CurrentDomain = DOMAIN || CurrentDomain, Tls = DOMAIN ? 'tls' : 'none', CurrentPort = DOMAIN ? 443 : PORT;
       }
   } else {
       CurrentDomain = DOMAIN, Tls = 'tls', CurrentPort = 443;
@@ -104,9 +118,9 @@ const httpServer = http.createServer(async (req, res) => {
       res.end(content);
     });
     return;
-  } else if (req.url === `/${SUB_PATH}`) {
+  } else if (new URL(req.url || '/', 'http://localhost').pathname === `/${SUB_PATH}`) {
     await getisp();await getip();
-    const namePart = NAME ? `${NAME}-${ISP}` : ISP;
+    const namePart = encodeURIComponent(NAME ? `${NAME}-${ISP}` : ISP);
     const tlsParam = Tls === 'tls' ? 'tls' : 'none';
     const ssTlsParam = Tls === 'tls' ? 'tls;' : '';
     const vlsURL = `vless://${UUID}@${CurrentDomain}:${CurrentPort}?encryption=none&security=${tlsParam}&sni=${CurrentDomain}&fp=chrome&type=ws&host=${CurrentDomain}&path=%2F${WSPATH}#${namePart}`;
@@ -139,7 +153,7 @@ function resolveHost(host) {
       }
       const dnsServer = DNS_SERVERS[attempts];
       attempts++;
-      const dnsQuery = `https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`;
+      const dnsQuery = `${dnsServer}?name=${encodeURIComponent(host)}&type=A`;
       axios.get(dnsQuery, {
         timeout: 5000,
         headers: { 'Accept': 'application/dns-json' }
@@ -160,33 +174,50 @@ function resolveHost(host) {
 
 // VLE-SS处理
 function handleVlsConnection(ws, msg) {
-  const [VERSION] = msg;
-  const id = msg.slice(1, 17);
-  if (!id.every((v, i) => v == parseInt(uuid.substr(i * 2, 2), 16))) return false;
+  try {
+    if (!Buffer.isBuffer(msg) || msg.length < 19) return false;
+    const [VERSION] = msg;
+    const id = msg.subarray(1, 17);
+    if (id.length !== 16 || !id.every((v, i) => v === parseInt(uuid.substr(i * 2, 2), 16))) return false;
 
-  let i = msg.slice(17, 18).readUInt8() + 19;
-  const port = msg.slice(i, i += 2).readUInt16BE(0);
-  const ATYP = msg.slice(i, i += 1).readUInt8();
-  const host = ATYP == 1 ? msg.slice(i, i += 4).join('.') :
-    (ATYP == 2 ? new TextDecoder().decode(msg.slice(i + 1, i += 1 + msg.slice(i, i + 1).readUInt8())) :
-      (ATYP == 3 ? msg.slice(i, i += 16).reduce((s, b, i, a) => (i % 2 ? s.concat(a.slice(i - 1, i + 1)) : s), []).map(b => b.readUInt16BE(0).toString(16)).join(':') : ''));
+    let i = 18 + msg[17];
+    if (i + 3 > msg.length) return false;
+    const port = msg.readUInt16BE(i); i += 2;
+    const ATYP = msg[i++];
+    let host;
+    if (ATYP === 1) {
+      if (i + 4 > msg.length) return false;
+      host = Array.from(msg.subarray(i, i += 4)).join('.');
+    } else if (ATYP === 2) {
+      if (i >= msg.length) return false;
+      const hostLen = msg[i++];
+      if (i + hostLen > msg.length) return false;
+      host = msg.subarray(i, i += hostLen).toString();
+    } else if (ATYP === 3) {
+      if (i + 16 > msg.length) return false;
+      const groups = [];
+      for (let end = i + 16; i < end; i += 2) groups.push(msg.readUInt16BE(i).toString(16));
+      host = groups.join(':');
+    } else return false;
 
-  ws.send(new Uint8Array([VERSION, 0]));
-  const duplex = createWebSocketStream(ws);
-  resolveHost(host)
-    .then(resolvedIP => {
-      net.connect({ host: resolvedIP, port }, function () {
-        this.write(msg.slice(i));
-        duplex.on('error', () => { }).pipe(this).on('error', () => { }).pipe(duplex);
-      }).on('error', () => { });
-    })
-    .catch(error => {
-      net.connect({ host, port }, function () {
-        this.write(msg.slice(i));
-        duplex.on('error', () => { }).pipe(this).on('error', () => { }).pipe(duplex);
-      }).on('error', () => { });
-    });
-  return true;
+    if (isBlockedDomain(host)) { ws.close(); return false; }
+    ws.send(new Uint8Array([VERSION, 0]));
+    const duplex = createWebSocketStream(ws);
+    resolveHost(host)
+      .then(resolvedIP => {
+        net.connect({ host: resolvedIP, port }, function () {
+          this.write(msg.slice(i));
+          duplex.on('error', () => { }).pipe(this).on('error', () => { }).pipe(duplex);
+        }).on('error', () => { });
+      })
+      .catch(() => {
+        net.connect({ host, port }, function () {
+          this.write(msg.slice(i));
+          duplex.on('error', () => { }).pipe(this).on('error', () => { }).pipe(duplex);
+        }).on('error', () => { });
+      });
+    return true;
+  } catch (error) { return false; }
 }
 
 // Tro-jan处理
@@ -219,6 +250,7 @@ function handleTrojConnection(ws, msg) {
     } else { return false; }
     port = msg.readUInt16BE(offset); offset += 2;
     if (offset < msg.length && msg[offset] === 0x0d && msg[offset + 1] === 0x0a) offset += 2;
+    if (isBlockedDomain(host)) { ws.close(); return false; }
     const duplex = createWebSocketStream(ws);
     resolveHost(host)
       .then(resolvedIP => {
@@ -252,6 +284,7 @@ function handleSsConnection(ws, msg) {
       host = msg.slice(offset, offset + 16).reduce((s, b, i, a) => (i % 2 ? s.concat(a.slice(i - 1, i + 1)) : s), []).map(b => b.readUInt16BE(0).toString(16)).join(':'); offset += 16;
     } else { return false; }
     port = msg.readUInt16BE(offset); offset += 2;
+    if (isBlockedDomain(host)) { ws.close(); return false; }
     const duplex = createWebSocketStream(ws);
     resolveHost(host)
       .then(resolvedIP => {
@@ -275,7 +308,9 @@ const wss = new WebSocket.Server({ server: httpServer });
 wss.on('connection', (ws, req) => {
   const url = req.url || '';
   const expectedPath = `/${WSPATH}`;
-  if (!url.startsWith(expectedPath)) { ws.close(); return; }
+  let pathname;
+  try { pathname = new URL(url, 'http://localhost').pathname; } catch (e) { ws.close(); return; }
+  if (pathname !== expectedPath) { ws.close(); return; }
 
   ws.once('message', msg => {
     if (msg.length > 17 && msg[0] === 0) {
@@ -558,12 +593,7 @@ function parseIPFromResponse(body, family) {
 }
 
 async function fetchIP() {
-    const forced = (process.env.FORCE_IP || '').trim();
-    if (forced && (net.isIPv4(forced) || net.isIPv6(forced))) {
-        return net.isIPv4(forced) ? { ipv4: forced, ipv6: '' } : { ipv4: '', ipv6: forced };
-    }
-    // 参考 eooce/node-ws: 端点表保持简洁, 首选与 getip() 同源(api-ipv4.ip.sb)保证与节点地址一致
-    const ipv4Endpoints = ['https://api-ipv4.ip.sb/ip', 'https://ipv4.ip.sb/ip', 'https://blog.cloudflare.com/cdn-cgi/trace', 'https://developers.cloudflare.com/cdn-cgi/trace'];
+    const ipv4Endpoints = ['https://ipv4.ip.sb/ip', 'https://blog.cloudflare.com/cdn-cgi/trace', 'https://developers.cloudflare.com/cdn-cgi/trace'];
     const ipv6Endpoints = ['https://ipv6.ip.sb/ip', 'https://blog.cloudflare.com/cdn-cgi/trace', 'https://developers.cloudflare.com/cdn-cgi/trace'];
     const fetchFromEndpoints = async (endpoints, family) => {
         for (const url of endpoints) {
@@ -571,7 +601,7 @@ async function fetchIP() {
                 const req = https.get(url, { timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0' }, lookup: makeLookup(family) }, (res) => {
                     let data = '';
                     res.on('data', (chunk) => data += chunk);
-                    res.on('end', () => resolve(parseIPFromResponse(data, family)));
+                    res.on('end', () => { resolve(parseIPFromResponse(data, family)); });
                 });
                 req.on('error', () => resolve(''));
                 req.on('timeout', () => { req.destroy(); resolve(''); });
@@ -581,14 +611,13 @@ async function fetchIP() {
         return '';
     };
     const [ipv4, ipv6] = await Promise.all([fetchFromEndpoints(ipv4Endpoints, 4), fetchFromEndpoints(ipv6Endpoints, 6)]);
-    // 探测失败不上报任何猜测的 IP, 交给 dashboard 按连接来源地址填充, 确保与真实出口一致 (eooce 原版行为)
     return { ipv4, ipv6 };
 }
 
 async function reportGeoIP(client, metadata, forceUpdate = false) {
     try {
         const { ipv4, ipv6 } = await fetchIP();
-        const currentIPKey = ipv4 || ipv6 || '';
+        const currentIPKey = `${ipv4 || ''}|${ipv6 || ''}`;
         if (!forceUpdate && lastReportedIP !== null && currentIPKey === lastReportedIP) return true;
         if (!ipv4 && !ipv6) { log('[GeoIP] 外部 IP 获取失败，发送空 IP（服务端将使用连接地址）'); }
         else { log('[GeoIP] 获取到 IP:', currentIPKey, '强制更新:', forceUpdate); }
@@ -928,13 +957,13 @@ async function startNezhaAgent() {
             stateStream = client.ReportSystemState(metadata);
             log('[Agent] ReportSystemState strem connect');
 
-            taskStream.on('data', (task) => { dispatchTask(task, taskStream, client, metadata); });
-            taskStream.on('error', (err) => { console.error('[Agent] RequestTask strem error:', err.message); workerCancelled = true; });
-            taskStream.on('end', () => { log('[Agent] RequestTask strem finished'); workerCancelled = true; });
-
-            // 修复: stateStream 也挂常驻 error/end 监听, 否则流断开时会抛 Unhandled 'error' 导致整个进程崩溃
-            stateStream.on('error', (err) => { console.error('[Agent] ReportSystemState strem error:', err.message); workerCancelled = true; });
+            // 常驻流级监听：EOF/重置只断流重连，绝不冒泡成 unhandled 'error'
+            stateStream.on('error', (err) => { logErr('[Agent] ReportSystemState strem error:', err.message); workerCancelled = true; });
             stateStream.on('end', () => { log('[Agent] ReportSystemState strem finished'); workerCancelled = true; });
+
+            taskStream.on('data', (task) => { dispatchTask(task, taskStream, client, metadata); });
+            taskStream.on('error', (err) => { logErr('[Agent] RequestTask strem error:', err.message); workerCancelled = true; });
+            taskStream.on('end', () => { log('[Agent] RequestTask strem finished'); workerCancelled = true; });
 
             const stateLoop = (async () => {
                 while (!workerCancelled) {
@@ -969,7 +998,7 @@ async function startNezhaAgent() {
                             if (success) { lastReportIPInfo = now; geoipReported = true; }
                         }
                     } catch (err) {
-                        console.error('[Agent] error:', err.message);
+                        logErr('[Agent] error:', err.message);
                         workerCancelled = true;
                         break;
                     }
@@ -980,7 +1009,7 @@ async function startNezhaAgent() {
             await stateLoop;
 
         } catch (err) {
-            console.error('[Agent] connect error:', err.message);
+            logErr('[Agent] connect error:', err.message);
         } finally {
             if (activeIOStreams > 0) {
                 log(`[Agent] 等待 ${activeIOStreams} 个活跃 IOStream 会话结束...`);
@@ -1013,14 +1042,53 @@ function startAgentChild() {
 }
 
 // start service
-if (process.env.NZ_AGENT_CHILD === '1') {
-  // 子进程模式：只跑 agent，不监听端口、不做保活访问
-  startNezhaAgent().then(() => process.exit(0))
-                  .catch(err => { console.error('[Agent] child fatal:', err && err.message); process.exit(1); });
-} else {
-  httpServer.listen(PORT, () => {
-    startAgentChild();
-    addAccessTask();
-    console.log(`Server is running on ${PORT}`);
-  });
+if (require.main === module) {
+  if (!HAS_EXPLICIT_UUID || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(UUID)) {
+    console.error('UUID must be explicitly configured as a valid UUID before starting the service');
+    process.exit(1);
+  }
+  if (process.env.NZ_AGENT_CHILD === '1') {
+    // 子进程模式：只跑 agent，不监听端口、不做保活访问
+    startNezhaAgent().then(() => process.exit(0))
+                    .catch(err => { console.error('[Agent] child fatal:', err && err.message); process.exit(1); });
+  } else {
+    httpServer.listen(PORT, () => {
+      startAgentChild();
+      addAccessTask();
+      console.log(`Server is running on ${PORT}`);
+    });
+  }
 }
+
+// 导出供单元测试使用
+module.exports = {
+  shouldUseTLS,
+  isBlockedDomain,
+  shouldExcludeInterface,
+  getArch,
+  parseIPFromResponse,
+  makeLookup,
+  buildMetadata,
+  sleep,
+  callWithTimeout,
+  getConnCount,
+  getProcessCountSync,
+  loadProto,
+  getisp,
+  getip,
+  addAccessTask,
+  resolveHost,
+  handleVlsConnection,
+  handleTrojConnection,
+  handleSsConnection,
+  dispatchTask,
+  reportGeoIP,
+  fetchIP,
+  getHost,
+  getState,
+  trackNetworkSpeed,
+  startNezhaAgent,
+  httpServer,
+  // 导出常量供测试验证
+  _constants: { TLS_PORTS, BLOCKED_DOMAINS, DNS_SERVERS, EXCLUDE_INTERFACES, EXPECT_FS_TYPES, TaskType, AGENT_VERSION, FM_NZFN, FM_NZTD, FM_NERR, FM_NZUP, UUID, WSPATH, SUB_PATH, NAME, DOMAIN, PORT, AUTO_ACCESS, NEZHA_SERVER, NEZHA_KEY },
+};

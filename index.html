@@ -1,194 +1,281 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>深夜电台 · Midnight Radio</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<title>随机灵感页</title>
 <style>
-  :root{
-    --bg:#1B1420;
-    --surface:#241A2B;
-    --amber:#E8A33D;
-    --teal:#6FA98A;
-    --cream:#F2E9DC;
-    --muted:#8C7C93;
-    --line:rgba(242,233,220,0.12);
+  /* ===== 设计令牌（随主题切换）===== */
+  :root {
+    --bg: #f4efe6;
+    --ink: #1d2b24;
+    --muted: rgba(29, 43, 36, .55);
+    --accent: #b0894a;
+    --card: rgba(29, 43, 36, .06);
   }
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{
-    background:var(--bg);
-    color:var(--cream);
-    font-family:'Space Mono', monospace;
-    min-height:100vh;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding:48px 24px;
+  /* 墨绿 × 古铜（默认） */
+  [data-theme="emerald"] {
+    --bg: #f4efe6; --ink: #1d2b24; --accent: #b0894a;
+    --muted: rgba(29,43,36,.55); --card: rgba(29,43,36,.06);
   }
-  .sleeve{
-    width:100%;
-    max-width:920px;
-    display:grid;
-    grid-template-columns:340px 1fr;
-    gap:56px;
-    align-items:center;
+  /* 午夜蓝 × 金 */
+  [data-theme="midnight"] {
+    --bg: #101820; --ink: #e8e3d5; --accent: #d4af37;
+    --muted: rgba(232,227,213,.55); --card: rgba(232,227,213,.08);
   }
-  .disc-wrap{
-    position:relative;
-    aspect-ratio:1/1;
+  /* 陶土 × 沙 */
+  [data-theme="terracotta"] {
+    --bg: #f2e8da; --ink: #4a2c1a; --accent: #c05621;
+    --muted: rgba(74,44,26,.55); --card: rgba(74,44,26,.07);
   }
-  .disc{
-    width:100%;
-    height:100%;
-    border-radius:50%;
-    background:
-      repeating-radial-gradient(circle at center,
-        #100a14 0px, #100a14 2px,
-        #180f1d 2px, #180f1d 4px);
-    box-shadow:0 30px 60px -20px rgba(0,0,0,0.6);
-    position:relative;
+  /* 鼠尾草绿 */
+  [data-theme="sage"] {
+    --bg: #e9e8dd; --ink: #2f3e34; --accent: #7a8450;
+    --muted: rgba(47,62,52,.55); --card: rgba(47,62,52,.07);
   }
-  .disc::before{
-    content:"";
-    position:absolute;
-    inset:0;
-    border-radius:50%;
-    background:radial-gradient(circle at 35% 30%, rgba(242,233,220,0.06), transparent 55%);
+  /* 雾蓝 */
+  [data-theme="fog"] {
+    --bg: #e8edf2; --ink: #1e2a36; --accent: #3d6b8c;
+    --muted: rgba(30,42,54,.55); --card: rgba(30,42,54,.07);
   }
-  .label{
-    position:absolute;
-    top:50%;left:50%;
-    transform:translate(-50%,-50%);
-    width:38%;height:38%;
-    border-radius:50%;
-    background:var(--amber);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    text-align:center;
-    padding:10px;
+  /* 玫瑰灰 */
+  [data-theme="rose"] {
+    --bg: #efe6e2; --ink: #3a2c2e; --accent: #a05c5c;
+    --muted: rgba(58,44,46,.55); --card: rgba(58,44,46,.07);
   }
-  .label span{
-    font-family:'Fraunces', serif;
-    font-weight:600;
-    font-size:13px;
-    color:#241608;
-    line-height:1.3;
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Georgia, "Noto Serif SC", "Songti SC", "SimSun", serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 8vh 6vw;
+    transition: background .6s ease, color .6s ease;
   }
-  .spindle{
-    position:absolute;
-    top:50%;left:50%;
-    width:10px;height:10px;
-    border-radius:50%;
-    background:var(--bg);
-    transform:translate(-50%,-50%);
+
+  /* ===== 顶部标签行 ===== */
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-bottom: 3.5rem;
+    font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    font-size: .8rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    opacity: 0;
+    animation: rise .8s ease forwards;
   }
-  .eyebrow{
-    font-size:12px;
-    letter-spacing:0.18em;
-    color:var(--teal);
-    text-transform:uppercase;
-    margin-bottom:18px;
+  .meta .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
   }
-  h1{
-    font-family:'Fraunces', serif;
-    font-weight:600;
-    font-size:44px;
-    line-height:1.08;
-    letter-spacing:-0.01em;
-    margin-bottom:14px;
+
+  /* ===== 名言主体 ===== */
+  blockquote {
+    max-width: 46em;
+    font-size: clamp(1.6rem, 4.2vw, 3.2rem);
+    line-height: 1.55;
+    text-align: left;
+    font-weight: normal;
+    letter-spacing: .01em;
+    opacity: 0;
+    animation: rise .9s ease .12s forwards;
   }
-  .desc{
-    color:var(--muted);
-    font-size:13px;
-    line-height:1.8;
-    max-width:38ch;
-    margin-bottom:32px;
+  blockquote .mark {
+    color: var(--accent);
+    font-size: .6em;
+    vertical-align: .35em;
+    margin-right: .3em;
   }
-  .tracklist{
-    border-top:1px solid var(--line);
+  blockquote .src {
+    display: block;
+    margin-top: 1.6rem;
+    font-size: .38em;
+    font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    letter-spacing: .1em;
+    color: var(--muted);
   }
-  .track{
-    display:grid;
-    grid-template-columns:28px 1fr auto;
-    gap:14px;
-    align-items:baseline;
-    padding:13px 0;
-    border-bottom:1px solid var(--line);
-    font-size:13px;
+
+  /* ===== 底部操作区 ===== */
+  .foot {
+    margin-top: 5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    opacity: 0;
+    animation: rise .8s ease .28s forwards;
   }
-  .track .no{ color:var(--muted); }
-  .track .name{ font-family:'Fraunces', serif; font-size:16px; font-weight:400; color:var(--cream); }
-  .track .name small{ display:block; font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); margin-top:3px; letter-spacing:0.03em; }
-  .track .time{ color:var(--muted); }
-  .track.now .no{ color:var(--amber); }
-  .track.now .name{ color:var(--amber); }
-  .meta{
-    display:flex;
-    gap:24px;
-    margin-top:28px;
-    font-size:11px;
-    color:var(--muted);
-    letter-spacing:0.05em;
+  .palette {
+    display: flex;
+    gap: .45rem;
+    padding: .45rem .7rem;
+    background: var(--card);
+    border-radius: 999px;
   }
-  .meta strong{ color:var(--cream); font-weight:400; }
-  @media (max-width:720px){
-    .sleeve{grid-template-columns:1fr; gap:36px;}
-    .disc-wrap{max-width:260px; margin:0 auto;}
-    h1{font-size:32px;}
+  .palette span {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1px solid rgba(127,127,127,.35);
+  }
+  .btn {
+    appearance: none;
+    border: 1px solid var(--ink);
+    background: transparent;
+    color: var(--ink);
+    font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    font-size: .82rem;
+    letter-spacing: .08em;
+    padding: .7rem 1.4rem;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 44px; /* 移动端可点目标 */
+    transition: background .25s ease, color .25s ease;
+  }
+  .btn:hover { background: var(--ink); color: var(--bg); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .hint {
+    font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    font-size: .75rem;
+    letter-spacing: .06em;
+    color: var(--muted);
+  }
+
+  /* 动画（尊重系统减弱动效设置） */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; opacity: 1 !important; }
   }
 </style>
 </head>
 <body>
-  <div class="sleeve">
-    <div class="disc-wrap">
-      <div class="disc">
-        <div class="label"><span>MIDNIGHT<br>RADIO</span></div>
-        <div class="spindle"></div>
-      </div>
-    </div>
-    <div class="side">
-      <p class="eyebrow">A 编 · Side A</p>
-      <h1>深夜电台</h1>
-      <p class="desc">一份献给凌晨两点的混音带。七首歌,从城市的灯火写到无人的海岸线。</p>
 
-      <div class="tracklist">
-        <div class="track now">
-          <span class="no">01</span>
-          <span class="name">午夜巴士<small>林间乐队</small></span>
-          <span class="time">3:42</span>
-        </div>
-        <div class="track">
-          <span class="no">02</span>
-          <span class="name">盐与光<small>苏打气泡</small></span>
-          <span class="time">4:05</span>
-        </div>
-        <div class="track">
-          <span class="no">03</span>
-          <span class="name">雨天便利店<small>晚风乐团</small></span>
-          <span class="time">3:18</span>
-        </div>
-        <div class="track">
-          <span class="no">04</span>
-          <span class="name">星尘信<small>候鸟计划</small></span>
-          <span class="time">3:56</span>
-        </div>
-        <div class="track">
-          <span class="no">05</span>
-          <span class="name">消失的车站<small>阿诚与朋友们</small></span>
-          <span class="time">4:21</span>
-        </div>
-      </div>
-
-      <div class="meta">
-        <span>时长 <strong>19:22</strong></span>
-        <span>风格 <strong>City Pop / Lo-fi</strong></span>
-        <span>年份 <strong>2026</strong></span>
-      </div>
-    </div>
+  <div class="meta">
+    <span class="dot"></span>
+    <span id="tag"># 随机灵感</span>
   </div>
+
+  <blockquote>
+    <span class="mark">“</span><span id="quote"></span><span class="mark">”</span>
+    <span class="src" id="src"></span>
+  </blockquote>
+
+  <div class="foot">
+    <div class="palette" id="palette" title="当前主题配色"></div>
+    <button class="btn" id="again">再来一个</button>
+    <span class="hint">按空格 / 回车也行</span>
+  </div>
+
+<script>
+  // ===== 随机数据源 =====
+  // 名言库：{ text: 内容, src: 出处, tag: 标签 }
+  const QUOTES = [
+    { text: '知识本身不改变命运，改变命运的是知识背后的行动力。', src: '—— 佚名', tag: '行动' },
+    { text: '行到水穷处，坐看云起时。', src: '—— 王维', tag: '心境' },
+    { text: 'The best way to predict the future is to invent it.', src: '— Alan Kay', tag: '创造' },
+    { text: '世界上只有一种真正的英雄主义，那就是认清生活的真相后依然热爱生活。', src: '—— 罗曼·罗兰', tag: '勇气' },
+    { text: 'Stay hungry, stay foolish.', src: '— Steve Jobs', tag: '求知' },
+    { text: '天下难事，必作于易；天下大事，必作于细。', src: '—— 老子', tag: '专注' },
+    { text: 'Simplicity is the ultimate sophistication.', src: '— Leonardo da Vinci', tag: '极简' },
+    { text: '种一棵树最好的时间是十年前，其次是现在。', src: '—— 非洲谚语', tag: '当下' },
+    { text: 'All we have to decide is what to do with the time that is given us.', src: '— J.R.R. Tolkien', tag: '选择' },
+    { text: '宁移白首之心，不坠青云之志。', src: '—— 王勃', tag: '志向' },
+    { text: 'Do what you can, with what you have, where you are.', src: '— Theodore Roosevelt', tag: '务实' },
+    { text: '君子藏器于身，待时而动。', src: '—— 《周易》', tag: '沉潜' },
+    { text: 'The only way to do great work is to love what you do.', src: '— Steve Jobs', tag: '热爱' },
+    { text: '不畏浮云遮望眼，自缘身在最高层。', src: '—— 王安石', tag: '视野' },
+    { text: 'Perfection is achieved, not when there is nothing more to add, but when there is nothing left to take away.', src: '— Antoine de Saint-Exupéry', tag: '取舍' },
+    { text: '知人者智，自知者明。胜人者有力，自胜者强。', src: '—— 老子', tag: '自知' },
+    { text: 'Great things are done by a series of small things brought together.', src: '— Vincent van Gogh', tag: '积累' },
+    { text: '山重水复疑无路，柳暗花明又一村。', src: '—— 陆游', tag: '转机' },
+    { text: 'It always seems impossible until it is done.', src: '— Nelson Mandela', tag: '坚持' },
+    { text: '人生如逆旅，我亦是行人。', src: '—— 苏轼', tag: '豁达' },
+  ];
+
+  // 主题列表（与 CSS 中 data-theme 一一对应）
+  const THEMES = [
+    { key: 'emerald',   colors: ['#f4efe6', '#1d2b24', '#b0894a'], name: '墨绿 × 古铜' },
+    { key: 'midnight',  colors: ['#101820', '#e8e3d5', '#d4af37'], name: '午夜 × 金' },
+    { key: 'terracotta',colors: ['#f2e8da', '#4a2c1a', '#c05621'], name: '陶土 × 沙' },
+    { key: 'sage',      colors: ['#e9e8dd', '#2f3e34', '#7a8450'], name: '鼠尾草绿' },
+    { key: 'fog',       colors: ['#e8edf2', '#1e2a36', '#3d6b8c'], name: '雾蓝' },
+    { key: 'rose',      colors: ['#efe6e2', '#3a2c2e', '#a05c5c'], name: '玫瑰灰' },
+  ];
+
+  // ===== 工具函数 =====
+  const pick = (arr, exclude) => {
+    if (exclude !== undefined && arr.length > 1) {
+      const rest = arr.filter((_, i) => i !== exclude);
+      return rest[Math.floor(Math.random() * rest.length)];
+    }
+    return arr[Math.floor(Math.random() * arr.length)];
+  };
+  const pickIdx = (n, exclude) => {
+    if (n <= 1) return 0;
+    let i = Math.floor(Math.random() * n);
+    if (i === exclude) i = (i + 1) % n;
+    return i;
+  };
+
+  // ===== 渲染：随机抽一条名言 + 随机换一个主题 =====
+  const render = () => {
+    // 名言：尽量不与上次重复
+    const qi = pickIdx(QUOTES.length, render.lastQ);
+    render.lastQ = qi;
+    const q = QUOTES[qi];
+    document.getElementById('quote').textContent = q.text;
+    document.getElementById('src').textContent = q.src;
+    document.getElementById('tag').textContent = '# ' + q.tag;
+
+    // 主题：尽量不与上次重复
+    const ti = pickIdx(THEMES.length, render.lastT);
+    render.lastT = ti;
+    const t = THEMES[ti];
+    document.documentElement.setAttribute('data-theme', t.key);
+
+    // 底部小色板：展示当前主题的背景/文字/点缀三色
+    const pal = document.getElementById('palette');
+    pal.innerHTML = '';
+    t.colors.forEach(c => {
+      const dot = document.createElement('span');
+      dot.style.background = c;
+      pal.appendChild(dot);
+    });
+    pal.title = '主题：' + t.name;
+  };
+  render.lastQ = -1;
+  render.lastT = -1;
+
+  // ===== 交互：按钮 / 空格 / 回车 =====
+  const reRoll = () => {
+    // 先淡出再重新渲染，制造"洗牌"感；减弱动效时直接换
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const els = [document.querySelector('blockquote'), document.querySelector('.meta'), document.querySelector('.foot')];
+    if (reduce) { render(); return; }
+    els.forEach(el => el.style.transition = 'opacity .15s ease');
+    els.forEach(el => el.style.opacity = 0);
+    setTimeout(() => { render(); requestAnimationFrame(() => {
+      els.forEach(el => { el.style.transition = ''; el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; });
+    }); }, 160);
+  };
+
+  document.getElementById('again').addEventListener('click', reRoll);
+  document.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); reRoll(); }
+  });
+
+  // 首次渲染
+  render();
+</script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon='{"version":"2024.11.0","token":"a3a7c5d0bbae400096ba173e48f04ab7","r":1,"spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>
